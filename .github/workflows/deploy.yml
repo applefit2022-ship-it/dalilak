@@ -1,0 +1,63 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - name: Compute base path and site URL
+        id: paths
+        run: |
+          REPO="${GITHUB_REPOSITORY#*/}"
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          if [ -n "${{ vars.CUSTOM_DOMAIN }}" ]; then
+            echo "base=/" >> "$GITHUB_OUTPUT"
+            echo "site=https://${{ vars.CUSTOM_DOMAIN }}/" >> "$GITHUB_OUTPUT"
+          elif [ "$REPO" = "${OWNER}.github.io" ]; then
+            echo "base=/" >> "$GITHUB_OUTPUT"
+            echo "site=https://${OWNER}.github.io/" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=/${REPO}/" >> "$GITHUB_OUTPUT"
+            echo "site=https://${OWNER}.github.io/${REPO}/" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build
+        env:
+          BASE_PATH: ${{ steps.paths.outputs.base }}
+          SITE_URL: ${{ steps.paths.outputs.site }}
+          # Public values only. Add these in: Settings > Secrets and variables > Actions
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_AUTH: ${{ vars.VITE_GOOGLE_AUTH }}
+          VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
+        run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
